@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>학생 뽑기 돌림판</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Noto Sans KR', sans-serif;
+      background: #f5f5f5;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 2rem;
+    }
+    h1 {
+      font-size: 28px;
+      font-weight: 700;
+      margin-bottom: 2rem;
+      color: #222;
+    }
+    .wrap {
+      display: flex;
+      align-items: center;
+      gap: 3rem;
+      background: #fff;
+      border-radius: 24px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
+      padding: 2.5rem 3rem;
+    }
+    .wheel-area {
+      position: relative;
+      width: 460px;
+      height: 460px;
+      flex-shrink: 0;
+    }
+    .arrow {
+      position: absolute;
+      top: -20px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 0; height: 0;
+      border-left: 15px solid transparent;
+      border-right: 15px solid transparent;
+      border-top: 30px solid #e53935;
+      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+      z-index: 10;
+    }
+    .right-panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.5rem;
+    }
+    #spin-btn {
+      padding: 14px 44px;
+      font-size: 20px;
+      font-weight: 700;
+      border-radius: 50px;
+      background: #e53935;
+      color: #fff;
+      border: none;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(229,57,53,0.4);
+      transition: transform 0.1s, box-shadow 0.1s;
+    }
+    #spin-btn:hover { box-shadow: 0 6px 20px rgba(229,57,53,0.5); }
+    #spin-btn:active { transform: scale(0.96); }
+    #spin-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+    #result-box {
+      font-size: 22px;
+      font-weight: 700;
+      color: #222;
+      min-height: 36px;
+      text-align: center;
+      background: #fff8e1;
+      border-radius: 12px;
+      padding: 12px 20px;
+      min-width: 180px;
+      border: 2px dashed #fbc02d;
+      display: none;
+    }
+    #result-box.show { display: block; }
+  </style>
+</head>
+<body>
+  <h1>🎡 학생 뽑기 돌림판</h1>
+  <div class="wrap">
+    <div class="wheel-area">
+      <div class="arrow"></div>
+      <canvas id="wheel" width="460" height="460"></canvas>
+    </div>
+    <div class="right-panel">
+      <button id="spin-btn">돌리기!</button>
+      <div id="result-box"></div>
+    </div>
+  </div>
+
+  <script>
+    const items = [
+      "Haribo (1)", "Mychew (2)", "Snickers (1)", "Mentos (1)", "Homework Pass",
+      "Haribo (2)", "CU coupon(3000)", "Haribo (1)", "Mychew (2)", "Snickers (2)",
+      "Mentos (2)", "Homework Pass", "Seat Change Pass", "Haribo (1)", "Mychew (2)",
+      "Snickers (1)", "Snickers (2)", "Homework Pass", "Seat Change Pass", "Haribo (2)",
+      "Mychew (4)", "Snickers (2)", "Mentos (1)", "Homework Pass", "Haribo (2)"
+    ];
+
+    const cuIndex = 6;
+    const cuProb = 1 / 100;
+    const otherProb = (1 - cuProb) / (items.length - 1);
+    const weights = items.map((_, i) => i === cuIndex ? cuProb : otherProb);
+
+    const palette = [
+      "#B5D4F4","#9FE1CB","#F5C4B3","#F4C0D1","#C0DD97",
+      "#CECBF6","#FFD700","#E1F5EE","#AFA9EC","#F0997B",
+      "#5DCAA7","#85B7EB","#ED93B1","#97C459","#D3D1C7",
+      "#EAF3DE","#FAECE7","#EEEDFE","#FAEEDA","#E6F1FB",
+      "#9FE1CB","#F5C4B3","#CECBF6","#C0DD97","#FAC775"
+    ];
+
+    const canvas = document.getElementById('wheel');
+    const ctx = canvas.getContext('2d');
+    const cx = 230, cy = 230, r = 220;
+    const n = items.length;
+    const arc = (2 * Math.PI) / n;
+    let currentAngle = 0;
+    let spinning = false;
+
+    function drawWheel(angle) {
+      ctx.clearRect(0, 0, 460, 460);
+      for (let i = 0; i < n; i++) {
+        const start = angle + i * arc;
+        const end = start + arc;
+        const mid = start + arc / 2;
+
+        ctx.beginPath();
+        ctx.moveTo(cx, cy);
+        ctx.arc(cx, cy, r, start, end);
+        ctx.closePath();
+        ctx.fillStyle = palette[i];
+        ctx.fill();
+        ctx.strokeStyle = '#fff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        const innerR = 90;
+        const availableLen = r - innerR - 10;
+
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.rotate(mid);
+
+        const label = items[i];
+        let fontSize = 16;
+        ctx.font = `bold ${fontSize}px sans-serif`;
+        let textWidth = ctx.measureText(label).width;
+        while (textWidth > availableLen && fontSize > 9) {
+          fontSize -= 0.5;
+          ctx.font = `bold ${fontSize}px sans-serif`;
+          textWidth = ctx.measureText(label).width;
+        }
+
+        ctx.fillStyle = '#222';
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(label, innerR, 0);
+        ctx.restore();
+      }
+
+      ctx.beginPath();
+      ctx.arc(cx, cy, 54, 0, 2 * Math.PI);
+      ctx.fillStyle = '#222';
+      ctx.fill();
+      ctx.strokeStyle = '#fff';
+      ctx.lineWidth = 3;
+      ctx.stroke();
+      ctx.font = 'bold 13px sans-serif';
+      ctx.fillStyle = '#fff';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('돌리기!', cx, cy);
+    }
+
+    drawWheel(currentAngle);
+
+    function pickItem() {
+      const rand = Math.random();
+      let cumulative = 0;
+      for (let i = 0; i < weights.length; i++) {
+        cumulative += weights[i];
+        if (rand < cumulative) return i;
+      }
+      return weights.length - 1;
+    }
+
+    document.getElementById('spin-btn').addEventListener('click', () => {
+      if (spinning) return;
+      spinning = true;
+      document.getElementById('spin-btn').disabled = true;
+      const resultBox = document.getElementById('result-box');
+      resultBox.classList.remove('show');
+      resultBox.textContent = '';
+
+      const winnerIdx = pickItem();
+      const targetSliceAngle = winnerIdx * arc + arc / 2;
+      const pointerAngle = 3 * Math.PI / 2;
+      const normalizedCurrent = ((currentAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      let targetAngle = pointerAngle - targetSliceAngle;
+      targetAngle = ((targetAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      const extraRotations = 2 * Math.PI * (8 + Math.floor(Math.random() * 5));
+      const totalRot = extraRotations + targetAngle - normalizedCurrent + (targetAngle < normalizedCurrent ? 2 * Math.PI : 0);
+
+      const duration = 4000 + Math.random() * 1500;
+      const start = performance.now();
+      const startAngle = currentAngle;
+
+      function easeOut(t) { return 1 - Math.pow(1 - t, 4); }
+
+      function animate(now) {
+        const elapsed = now - start;
+        const t = Math.min(elapsed / duration, 1);
+        currentAngle = startAngle + totalRot * easeOut(t);
+        drawWheel(currentAngle);
+        if (t < 1) {
+          requestAnimationFrame(animate);
+        } else {
+          spinning = false;
+          document.getElementById('spin-btn').disabled = false;
+          resultBox.textContent = (winnerIdx === cuIndex ? '🎊✨ ' : '🎉 ') + items[winnerIdx] + '!';
+          resultBox.classList.add('show');
+        }
+      }
+      requestAnimationFrame(animate);
+    });
+  </script>
+</body>
+</html>
