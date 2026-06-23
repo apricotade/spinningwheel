@@ -7,96 +7,84 @@
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
-      font-family: 'Noto Sans KR', sans-serif;
-      background: #f5f5f5;
+      background: #f0f2f5;
       display: flex;
       flex-direction: column;
       align-items: center;
       justify-content: center;
       min-height: 100vh;
-      padding: 2rem;
+      font-family: 'Noto Sans KR', sans-serif;
     }
     h1 {
-      font-size: 28px;
+      font-size: 26px;
       font-weight: 700;
-      margin-bottom: 2rem;
       color: #222;
-    }
-    .wrap {
-      display: flex;
-      align-items: center;
-      gap: 3rem;
-      background: #fff;
-      border-radius: 24px;
-      box-shadow: 0 8px 32px rgba(0,0,0,0.1);
-      padding: 2.5rem 3rem;
+      margin-bottom: 16px;
     }
     .wheel-area {
       position: relative;
-      width: 460px;
-      height: 460px;
-      flex-shrink: 0;
+      width: min(96vw, 96vh, 660px);
+      aspect-ratio: 1;
     }
     .arrow {
       position: absolute;
-      top: -20px;
+      top: -16px;
       left: 50%;
       transform: translateX(-50%);
       width: 0; height: 0;
-      border-left: 15px solid transparent;
-      border-right: 15px solid transparent;
-      border-top: 30px solid #e53935;
-      filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
+      border-left: 18px solid transparent;
+      border-right: 18px solid transparent;
+      border-top: 36px solid #e53935;
+      filter: drop-shadow(0 2px 5px rgba(0,0,0,0.35));
       z-index: 10;
+      pointer-events: none;
     }
-    .right-panel {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 1.5rem;
-    }
-    #spin-btn {
-      padding: 14px 44px;
-      font-size: 20px;
-      font-weight: 700;
-      border-radius: 50px;
-      background: #e53935;
-      color: #fff;
-      border: none;
+    canvas {
+      width: 100%; height: 100%;
+      display: block;
       cursor: pointer;
-      box-shadow: 0 4px 14px rgba(229,57,53,0.4);
-      transition: transform 0.1s, box-shadow 0.1s;
+      border-radius: 50%;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.15);
     }
-    #spin-btn:hover { box-shadow: 0 6px 20px rgba(229,57,53,0.5); }
-    #spin-btn:active { transform: scale(0.96); }
-    #spin-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-    #result-box {
-      font-size: 22px;
+    #result-overlay {
+      position: absolute;
+      top: 50%; left: 50%;
+      transform: translate(-50%, -50%) scale(0.5);
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      font-size: 30px;
       font-weight: 700;
-      color: #222;
-      min-height: 36px;
+      padding: 24px 40px;
+      border-radius: 20px;
       text-align: center;
-      background: #fff8e1;
-      border-radius: 12px;
-      padding: 12px 20px;
-      min-width: 180px;
-      border: 2px dashed #fbc02d;
-      display: none;
+      word-break: keep-all;
+      opacity: 0;
+      transition: opacity 0.35s ease, transform 0.4s cubic-bezier(0.175,0.885,0.32,1.275);
+      z-index: 20;
+      max-width: 85%;
+      cursor: pointer;
+      pointer-events: none;
     }
-    #result-box.show { display: block; }
+    #result-overlay.show {
+      opacity: 1;
+      transform: translate(-50%, -50%) scale(1);
+      pointer-events: auto;
+    }
+    #result-overlay .hint {
+      display: block;
+      font-size: 13px;
+      font-weight: 400;
+      color: rgba(255,255,255,0.5);
+      margin-top: 8px;
+    }
   </style>
 </head>
 <body>
   <h1>🎡 학생 뽑기 돌림판</h1>
-  <div class="wrap">
-    <div class="wheel-area">
-      <div class="arrow"></div>
-      <canvas id="wheel" width="460" height="460"></canvas>
-    </div>
-    <div class="right-panel">
-      <button id="spin-btn">돌리기!</button>
-      <div id="result-box"></div>
-    </div>
+  <div class="wheel-area" id="wheelArea">
+    <div class="arrow"></div>
+    <canvas id="wheel"></canvas>
+    <div id="result-overlay"></div>
   </div>
 
   <script>
@@ -123,18 +111,108 @@
 
     const canvas = document.getElementById('wheel');
     const ctx = canvas.getContext('2d');
-    const cx = 230, cy = 230, r = 220;
     const n = items.length;
     const arc = (2 * Math.PI) / n;
     let currentAngle = 0;
     let spinning = false;
+    let SIZE = 660;
+
+    function resize() {
+      const area = document.getElementById('wheelArea');
+      SIZE = area.offsetWidth;
+      canvas.width = SIZE;
+      canvas.height = SIZE;
+      drawWheel(currentAngle);
+    }
+    window.addEventListener('resize', resize);
+
+    let audioCtx = null;
+    function getAudio() {
+      if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      return audioCtx;
+    }
+
+    function playTick() {
+      const ac = getAudio();
+      const o = ac.createOscillator();
+      const g = ac.createGain();
+      o.connect(g); g.connect(ac.destination);
+      o.type = 'triangle';
+      o.frequency.value = 600 + Math.random() * 200;
+      g.gain.setValueAtTime(0.18, ac.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime + 0.04);
+      o.start(ac.currentTime);
+      o.stop(ac.currentTime + 0.04);
+    }
+
+    function playChord(ac, freqs, startTime, duration, gainVal, type) {
+      freqs.forEach(freq => {
+        const o = ac.createOscillator();
+        const g = ac.createGain();
+        const compress = ac.createDynamicsCompressor();
+        o.connect(g); g.connect(compress); compress.connect(ac.destination);
+        o.type = type;
+        o.frequency.value = freq;
+        g.gain.setValueAtTime(0, startTime);
+        g.gain.linearRampToValueAtTime(gainVal, startTime + 0.03);
+        g.gain.setValueAtTime(gainVal, startTime + duration - 0.06);
+        g.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+        o.start(startTime);
+        o.stop(startTime + duration);
+      });
+    }
+
+    function playFanfare(isCU) {
+      const ac = getAudio();
+      if (!isCU) {
+        const seq = [
+          { freqs: [523,659,784],  t:0.00, dur:0.18 },
+          { freqs: [587,740,880],  t:0.18, dur:0.18 },
+          { freqs: [659,784,987],  t:0.36, dur:0.18 },
+          { freqs: [698,880,1047], t:0.54, dur:0.40 },
+        ];
+        seq.forEach(({ freqs, t, dur }) => {
+          playChord(ac, freqs, ac.currentTime+t, dur, 0.12, 'sine');
+          playChord(ac, freqs, ac.currentTime+t, dur, 0.06, 'triangle');
+          playChord(ac, freqs.map(f=>f/2), ac.currentTime+t, dur, 0.08, 'sine');
+        });
+      } else {
+        const seq = [
+          { freqs: [392,523,659,784],   t:0.00, dur:0.20 },
+          { freqs: [440,554,698,880],   t:0.20, dur:0.20 },
+          { freqs: [494,622,740,988],   t:0.40, dur:0.20 },
+          { freqs: [523,659,784,1047],  t:0.60, dur:0.20 },
+          { freqs: [587,740,880,1175],  t:0.80, dur:0.20 },
+          { freqs: [659,784,988,1319],  t:1.00, dur:0.20 },
+          { freqs: [784,988,1175,1568], t:1.20, dur:0.70 },
+        ];
+        seq.forEach(({ freqs, t, dur }) => {
+          playChord(ac, freqs, ac.currentTime+t, dur, 0.10, 'sine');
+          playChord(ac, freqs, ac.currentTime+t, dur, 0.05, 'square');
+          playChord(ac, freqs, ac.currentTime+t, dur, 0.05, 'triangle');
+          playChord(ac, freqs.map(f=>f/2), ac.currentTime+t, dur, 0.08, 'sine');
+        });
+        const buf = ac.createBuffer(1, ac.sampleRate*0.5, ac.sampleRate);
+        const data = buf.getChannelData(0);
+        for (let i=0; i<data.length; i++) data[i]=(Math.random()*2-1)*(1-i/data.length);
+        const src = ac.createBufferSource();
+        const g = ac.createGain();
+        const filter = ac.createBiquadFilter();
+        filter.type='highpass'; filter.frequency.value=4000;
+        src.buffer=buf; src.connect(filter); filter.connect(g); g.connect(ac.destination);
+        g.gain.setValueAtTime(0.15, ac.currentTime+1.2);
+        g.gain.exponentialRampToValueAtTime(0.001, ac.currentTime+1.7);
+        src.start(ac.currentTime+1.2);
+      }
+    }
 
     function drawWheel(angle) {
-      ctx.clearRect(0, 0, 460, 460);
-      for (let i = 0; i < n; i++) {
-        const start = angle + i * arc;
+      const cx = SIZE/2, cy = SIZE/2, r = SIZE/2 - 4;
+      ctx.clearRect(0, 0, SIZE, SIZE);
+      for (let i=0; i<n; i++) {
+        const start = angle + i*arc;
         const end = start + arc;
-        const mid = start + arc / 2;
+        const mid = start + arc/2;
 
         ctx.beginPath();
         ctx.moveTo(cx, cy);
@@ -146,15 +224,15 @@
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        const innerR = 90;
-        const availableLen = r - innerR - 10;
+        const innerR = r * 0.38;
+        const availableLen = r - innerR - r*0.05;
 
         ctx.save();
         ctx.translate(cx, cy);
         ctx.rotate(mid);
 
         const label = items[i];
-        let fontSize = 16;
+        let fontSize = Math.round(r*0.075);
         ctx.font = `bold ${fontSize}px sans-serif`;
         let textWidth = ctx.measureText(label).width;
         while (textWidth > availableLen && fontSize > 9) {
@@ -162,7 +240,6 @@
           ctx.font = `bold ${fontSize}px sans-serif`;
           textWidth = ctx.measureText(label).width;
         }
-
         ctx.fillStyle = '#222';
         ctx.textAlign = 'left';
         ctx.textBaseline = 'middle';
@@ -170,71 +247,100 @@
         ctx.restore();
       }
 
+      const cr = r * 0.22;
       ctx.beginPath();
-      ctx.arc(cx, cy, 54, 0, 2 * Math.PI);
-      ctx.fillStyle = '#222';
+      ctx.arc(cx, cy, cr, 0, 2*Math.PI);
+      ctx.fillStyle = spinning ? '#555' : '#e53935';
       ctx.fill();
       ctx.strokeStyle = '#fff';
       ctx.lineWidth = 3;
       ctx.stroke();
-      ctx.font = 'bold 13px sans-serif';
+      ctx.font = `bold ${Math.round(cr*0.42)}px sans-serif`;
       ctx.fillStyle = '#fff';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText('돌리기!', cx, cy);
+      ctx.fillText(spinning ? '...' : '돌리기!', cx, cy);
     }
 
-    drawWheel(currentAngle);
+    function getCurrentSlice(angle) {
+      const norm = ((angle%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
+      const pointer = 3*Math.PI/2;
+      const adjusted = ((pointer-norm)%(2*Math.PI)+2*Math.PI)%(2*Math.PI);
+      return Math.floor(adjusted/arc)%n;
+    }
 
     function pickItem() {
       const rand = Math.random();
       let cumulative = 0;
-      for (let i = 0; i < weights.length; i++) {
+      for (let i=0; i<weights.length; i++) {
         cumulative += weights[i];
         if (rand < cumulative) return i;
       }
-      return weights.length - 1;
+      return weights.length-1;
     }
 
-    document.getElementById('spin-btn').addEventListener('click', () => {
+    function spin() {
       if (spinning) return;
       spinning = true;
-      document.getElementById('spin-btn').disabled = true;
-      const resultBox = document.getElementById('result-box');
-      resultBox.classList.remove('show');
-      resultBox.textContent = '';
+      const overlay = document.getElementById('result-overlay');
+      overlay.classList.remove('show');
+      overlay.innerHTML = '';
 
       const winnerIdx = pickItem();
-      const targetSliceAngle = winnerIdx * arc + arc / 2;
-      const pointerAngle = 3 * Math.PI / 2;
-      const normalizedCurrent = ((currentAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      const targetSliceAngle = winnerIdx*arc + arc/2;
+      const pointerAngle = 3*Math.PI/2;
+      const normalizedCurrent = ((currentAngle%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
       let targetAngle = pointerAngle - targetSliceAngle;
-      targetAngle = ((targetAngle % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
-      const extraRotations = 2 * Math.PI * (8 + Math.floor(Math.random() * 5));
-      const totalRot = extraRotations + targetAngle - normalizedCurrent + (targetAngle < normalizedCurrent ? 2 * Math.PI : 0);
+      targetAngle = ((targetAngle%(2*Math.PI))+2*Math.PI)%(2*Math.PI);
+      const extraRotations = 2*Math.PI*(8+Math.floor(Math.random()*5));
+      const totalRot = extraRotations + targetAngle - normalizedCurrent + (targetAngle < normalizedCurrent ? 2*Math.PI : 0);
 
-      const duration = 4000 + Math.random() * 1500;
+      const duration = 4000 + Math.random()*1500;
       const start = performance.now();
       const startAngle = currentAngle;
+      let lastSlice = getCurrentSlice(currentAngle);
 
-      function easeOut(t) { return 1 - Math.pow(1 - t, 4); }
+      function easeOut(t) { return 1-Math.pow(1-t,4); }
 
       function animate(now) {
         const elapsed = now - start;
-        const t = Math.min(elapsed / duration, 1);
-        currentAngle = startAngle + totalRot * easeOut(t);
+        const t = Math.min(elapsed/duration, 1);
+        currentAngle = startAngle + totalRot*easeOut(t);
         drawWheel(currentAngle);
+        const curSlice = getCurrentSlice(currentAngle);
+        if (curSlice !== lastSlice) { playTick(); lastSlice = curSlice; }
         if (t < 1) {
           requestAnimationFrame(animate);
         } else {
           spinning = false;
-          document.getElementById('spin-btn').disabled = false;
-          resultBox.textContent = (winnerIdx === cuIndex ? '🎊✨ ' : '🎉 ') + items[winnerIdx] + '!';
-          resultBox.classList.add('show');
+          drawWheel(currentAngle);
+          const isCU = winnerIdx === cuIndex;
+          overlay.innerHTML = (isCU ? '🎊✨ ' : '🎉 ') + items[winnerIdx] + '!<span class="hint">클릭하면 닫힘</span>';
+          setTimeout(() => overlay.classList.add('show'), 50);
+          playFanfare(isCU);
         }
       }
       requestAnimationFrame(animate);
+    }
+
+    canvas.addEventListener('click', (e) => {
+      const overlay = document.getElementById('result-overlay');
+      if (overlay.classList.contains('show')) return;
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = SIZE / rect.width;
+      const scaleY = SIZE / rect.height;
+      const x = (e.clientX - rect.left) * scaleX - SIZE/2;
+      const y = (e.clientY - rect.top) * scaleY - SIZE/2;
+      const dist = Math.sqrt(x*x + y*y);
+      const cr = (SIZE/2 - 4) * 0.22;
+      if (dist <= cr) spin();
     });
+
+    document.getElementById('result-overlay').addEventListener('click', () => {
+      document.getElementById('result-overlay').classList.remove('show');
+    });
+
+    setTimeout(resize, 50);
   </script>
 </body>
 </html>
